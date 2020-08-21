@@ -8,6 +8,11 @@ use mysqli_result;
 class Connection
 {
     /**
+     * @var string
+     */
+    private $charset;
+
+    /**
      * @var Server
      */
     private $server;
@@ -29,6 +34,7 @@ class Connection
     {
         $this->server = $server;
         $this->database = $database;
+        $this->charset = 'utf8';
     }
 
     /**
@@ -46,12 +52,32 @@ class Connection
     }
 
     /**
+     * set charset to access database
+     * @param $charset
+     */
+    public function set_charset($charset)
+    {
+        $this->charset = $charset;
+    }
+
+    /**
+     * return database charset (in default is UTF8)
+     * @return string
+     */
+    public function get_charset()
+    {
+        return $this->charset;
+    }
+
+    /**
      * create new mysql connection
      * @return mysqli
      */
     private function get_connection()
     {
-        return new mysqli($this->server->getServer(), $this->server->getUsername(), $this->server->getPassword(), $this->database);
+        $mysqli = new mysqli($this->server->getServer(), $this->server->getUsername(), $this->server->getPassword(), $this->database);
+        $mysqli->set_charset($this->get_charset());
+        return $mysqli;
     }
 
     /**
@@ -69,7 +95,8 @@ class Connection
      */
     public function get_last_error()
     {
-        return mysqli_error($this->last_connection);
+        if ($this->last_connection != null)
+            return mysqli_error($this->last_connection);
     }
 
     /**
@@ -79,16 +106,15 @@ class Connection
      */
     public function run_query($query)
     {
-        if($this->last_connection != null)
+        if ($this->last_connection != null)
             $this->last_connection->close();
         $conn = $this->get_connection();
         $this->last_connection = $conn;
-        if($conn->connect_error) {
+        if ($conn->connect_error) {
             return false;
         }
 
-        $mysqli_result = $conn->query($query);
-        return $mysqli_result;
+        return $conn->query($query);
     }
 
     /**
@@ -100,7 +126,8 @@ class Connection
     public function run_query_connection($query, &$conn)
     {
         $conn = $this->get_connection();
-        if($conn->connect_error) {
+        $this->last_connection = $conn;
+        if ($conn->connect_error) {
             return false;
         }
 
@@ -117,7 +144,7 @@ class Connection
         $selectValues = array();
 
         $result = $this->run_query($query);
-        if($result != false && $result->num_rows > 0) {
+        if ($result != false && $result->num_rows > 0) {
             while ($row = $result->fetch_assoc()) {
                 $select = array();
 
@@ -130,5 +157,10 @@ class Connection
         }
 
         return $selectValues;
+    }
+
+    public function close_last_connection()
+    {
+        $this->last_connection->close();
     }
 }

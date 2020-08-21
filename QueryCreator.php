@@ -17,18 +17,12 @@ namespace MySqlConnection {
          */
         public static function insert_query($tableName, $dataList)
         {
-            $keys = "";
-            $values = "";
-
             foreach ($dataList as $key => $value) {
-                if($keys != "" && $values != "") {
-                    $keys .= ", ";
-                    $values .= ", ";
-                }
-
-                $keys .= $key;
-                $values .= self::fix_value_format($value);
+                $dataList[$key] = self::fix_value_format($value);
             }
+
+            $keys = join(',', array_keys($dataList));
+            $values = join(',', array_values($dataList));
 
             return "INSERT INTO " . $tableName . " (" . $keys . ") VALUES (" . $values . ")";
         }
@@ -44,7 +38,7 @@ namespace MySqlConnection {
         {
             $values = "";
             foreach ($dataList as $key => $value) {
-                if($values != "") {
+                if ($values != "") {
                     $values .= ", ";
                 }
                 $values .= "`$key`=" . self::fix_value_format($value);
@@ -92,7 +86,7 @@ namespace MySqlConnection {
          */
         private static function get_condition($condition)
         {
-            if(gettype($condition) == "array") {
+            if (gettype($condition) == "array") {
                 $condition = ConditionBuilder::array_condition_to_string($condition);
             }
             return (($condition == "") ? "" : (" WHERE " . $condition));
@@ -107,10 +101,13 @@ namespace MySqlConnection {
          */
         private static function fix_value_format($value)
         {
-            if(gettype($value) == "string") {
+            $isPassword = strpos($value, 'password(\'') !== false || strpos($value, 'password("') !== false;
+            if (gettype($value) == "string" && !is_numeric($value) && !$isPassword) {
                 return "'$value'";
-            } else if(gettype($value) == "date") {
+            } elseif (gettype($value) == "date") {
                 return date_format($value, "y-M-d");
+            } elseif (strtolower(gettype($value)) == "datetime") {
+
             } else {
                 return $value;
             }
@@ -126,7 +123,7 @@ namespace MySqlConnection {
         public static function select_count_query($table, $column = '*', $condition = '')
         {
             $selectQuery = new SelectQueryCreator($table);
-            if(gettype($condition) == "array") {
+            if (gettype($condition) == "array") {
                 $selectQuery->set_condition(ConditionBuilder::array_condition_to_string($condition));
             } else {
                 $selectQuery->set_condition($condition);
@@ -154,7 +151,7 @@ namespace MySqlConnection {
         private $limit;
         private $group;
         private $columns = "*";
-        private $joinDatabase;
+        private $joinDb;
         private $table;
 
         /**
@@ -164,6 +161,7 @@ namespace MySqlConnection {
         public function __construct($table)
         {
             $this->table = $table;
+            $this->clear_join();
         }
 
         /**
@@ -176,7 +174,6 @@ namespace MySqlConnection {
             return new SelectQueryCreator($table);
         }
 
-
         /**
          * set condition for select from table
          * @param string|array $condition
@@ -184,12 +181,17 @@ namespace MySqlConnection {
          */
         public function set_condition($condition)
         {
-            if(gettype($condition) == "array") $condition = ConditionBuilder::array_condition_to_string($condition);
+            if (gettype($condition) == "array") $condition = ConditionBuilder::array_condition_to_string($condition);
 
-            if($condition != '') {
+            if ($condition != '') {
                 $this->condition = "WHERE $condition ";
             }
             return $this;
+        }
+
+        public function remove_condition()
+        {
+            $this->condition = '';
         }
 
         /**
@@ -200,10 +202,41 @@ namespace MySqlConnection {
          */
         public function set_order_by($column, $order_option = 'DESC')
         {
-            if(strtoupper($order_option) != self::ORDER_BY_OPTION_ASC && strtoupper($order_option) != self::ORDER_BY_OPTION_DESC) {
+            if (strtoupper($order_option) != self::ORDER_BY_OPTION_ASC && strtoupper($order_option) != self::ORDER_BY_OPTION_DESC) {
                 return $this;
             }
             $this->orderBy = "ORDER BY $column $order_option ";
+            return $this;
+        }
+
+
+        /**
+         * Order Select Query by multiply items
+         * Example value for Parameter: ['column1' => 'DESC', 'column2' => 'ASC']
+         * @param $columns
+         * @return SelectQueryCreator
+         */
+        public function set_order_by_items($columns)
+        {
+            foreach ($columns as $columnName => $order_option) {
+                if (strtoupper($order_option) != self::ORDER_BY_OPTION_ASC && strtoupper($order_option) != self::ORDER_BY_OPTION_DESC)
+                    return $this;
+                if ($this->orderBy == '')
+                    $this->orderBy .= 'ORDER BY ';
+                else
+                    $this->orderBy .= ', ';
+                $this->orderBy .= "$columnName $order_option ";
+            }
+            return $this;
+        }
+
+        public function set_order_by_condition($condition, $order_option)
+        {
+            if (gettype($condition) == 'array')
+                $condition = ConditionBuilder::array_condition_to_string($condition);
+
+            $this->orderBy = 'ORDER BY ' . "($condition)" . ' ' . $order_option . ' ';
+
             return $this;
         }
 
@@ -279,19 +312,22 @@ namespace MySqlConnection {
          */
         public function select_columns($columns)
         {
-            if(gettype($columns) == "array") {
+            if (gettype($columns) == "array") {
 
                 $strColumns = "";
 
                 foreach ($columns as $column) {
-                    if($columns != "") {
+                    if ($strColumns != "") {
                         $strColumns .= ", ";
                     }
-                    $strColumns .= "`$column`";
+                    if (strpos($column, '`') !== false)
+                        $strColumns .= "$column";
+                    else
+                        $strColumns .= "`$column`";
                 }
 
                 $this->columns = $strColumns;
-            } else if(gettype($columns) == "string") {
+            } elseif (gettype($columns) == "string") {
                 $this->columns = $columns;
             }
             return $this;
@@ -309,6 +345,22 @@ namespace MySqlConnection {
             return $this;
         }
 
+
+        public function set_inner_join($table, $condition)
+        {
+            $this->join_database($table, $condition, self::JOIN_TYPE_INNER);
+        }
+
+        public function set_left_join($table, $condition)
+        {
+            $this->join_database($table, $condition, self::JOIN_TYPE_LEFT);
+        }
+
+        public function set_right_join($table, $condition)
+        {
+            $this->join_database($table, $condition, self::JOIN_TYPE_RIGHT);
+        }
+
         /**
          * join a database to your query
          * @param string $table table you want to add
@@ -321,27 +373,69 @@ namespace MySqlConnection {
          */
         public function join_database($table, $condition, $type = 'INNER')
         {
-            if(gettype($condition) == "array") {
+            if (gettype($condition) == "array") {
 
                 foreach ($condition as $key => $value) {
                     $newKey = $key;
                     $newValue = $value;
-                    if(!$this->startsWith($key, $this->table)) {
+
+                    if (strpos($key, '.') === false) {
                         $newKey = $this->table . '.' . $key;
                     }
-                    if (!$this->startsWith($value, $table)) {
+
+                    if (strpos($value, '.') === false) {
                         $newValue = $table . '.' . $value;
                     }
 
-                    $condition[$newKey] = $newValue;
                     unset($condition[$key]);
+                    $condition[$newKey] = $newValue;
                 }
 
                 $condition = ConditionBuilder::array_condition_to_string($condition, false);
             }
 
-            $this->joinDatabase = "$type JOIN `$table` " . (($condition != '') ? "on $condition" : '') . ' ';
+            $this->joinDb[$type] = ['table' => $table, 'condition' => $condition];
+
             return $this;
+        }
+
+        private function join_to_string()
+        {
+            $joins = '';
+            foreach ($this->joinDb as $type => $value) {
+                if ($value['table'] != '') {
+                    $join = $type . ' JOIN ' . $value['table'];
+                    $condition = $value['condition'];
+                    if ($condition != '')
+                        $join .= ' ON ' . $condition;
+                    if ($joins != '')
+                        $joins .= ' ';
+                    $joins .= $join;
+                }
+            }
+            if ($joins != '')
+                $joins .= ' ';
+            return $joins;
+        }
+
+        public function remove_right_join()
+        {
+            $this->remove_join(self::JOIN_TYPE_RIGHT);
+        }
+
+        public function remove_left_join()
+        {
+            $this->remove_join(self::JOIN_TYPE_LEFT);
+        }
+
+        public function remove_inner_join()
+        {
+            $this->remove_join(self::JOIN_TYPE_INNER);
+        }
+
+        public function remove_join($type = 'inner')
+        {
+            $this->joinDb[$type] = ['' => ''];
         }
 
         /**
@@ -350,7 +444,11 @@ namespace MySqlConnection {
          */
         public function clear_join()
         {
-            $this->joinDatabase = "";
+            $this->joinDb = [
+                self::JOIN_TYPE_LEFT => ['table' => '', 'condition' => ''],
+                self::JOIN_TYPE_RIGHT => ['table' => '', 'condition' => ''],
+                self::JOIN_TYPE_INNER => ['table' => '', 'condition' => '']
+            ];
             return $this;
         }
 
@@ -365,13 +463,13 @@ namespace MySqlConnection {
         {
             $tablesStr = "";
 
-            if(gettype($tables) == "array" or gettype($tables) == "string[]") {
+            if (gettype($tables) == "array" or gettype($tables) == "string[]") {
                 foreach ($tables as $table) {
-                    if($tablesStr != "")
+                    if ($tablesStr != "")
                         $tablesStr .= ", ";
                     $tablesStr .= "$table";
                 }
-            } else if(gettype($tables) == "string") {
+            } elseif (gettype($tables) == "string") {
                 $tablesStr = $tables;
             }
 
@@ -393,7 +491,7 @@ namespace MySqlConnection {
          */
         public function __toString()
         {
-            return trim("SELECT " . $this->columns . " FROM " . $this->table . ' ' . $this->joinDatabase . $this->condition . $this->orderBy . $this->group . $this->limit);
+            return trim("SELECT " . $this->columns . " FROM " . $this->table . ' ' . $this->join_to_string() . $this->condition . $this->orderBy . $this->group . $this->limit);
         }
 
 

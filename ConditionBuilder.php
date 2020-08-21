@@ -72,9 +72,6 @@ class ConditionBuilder
         if($condition == self::$LIKE && gettype($value) != "string") {
             return $this;
         }
-        if($condition == self::$LIKE && gettype($value) != "string") {
-            return $this;
-        }
 
         $columnName = "`$columnName`";
 
@@ -121,7 +118,7 @@ class ConditionBuilder
                 $condition .= " " . $this->operators[$columnName] . " ";
             }
 
-            $condition .= "$columnName " . $this->conditionsStates[$columnName] . " " . $this->fix_value ? self::fix_value_format($value) : $value;
+            $condition .= "$columnName " . $this->conditionsStates[$columnName] . " " . ($this->fix_value ? self::fix_value_format($value) : $value);
         }
         return $condition;
     }

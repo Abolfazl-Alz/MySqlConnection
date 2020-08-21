@@ -25,7 +25,7 @@ class TableControl
     private $tableName;
 
     /**
-     * TableControl constructor.
+     * tableControl constructor.
      * @param Connection $connection
      * @param string $tableName
      */
@@ -42,7 +42,8 @@ class TableControl
      */
     public function insert_query($dataList)
     {
-        $this->connection->run_query_connection(QueryCreator::insert_query($this->tableName, $dataList), $conn);
+        $query = QueryCreator::insert_query($this->tableName, $dataList);
+        $this->connection->run_query_connection($query, $conn);
         return mysqli_insert_id($conn);
     }
 
@@ -106,8 +107,9 @@ class TableControl
      */
     public function select_count($condition = '', $column = '*')
     {
-        $countValues = $this->connection->run_select_query(QueryCreator::select_count_query($condition));
-        if(count($countValues) == 0 || !array_key_exists("COUNT($column)", $countValues)) {
+        $query = QueryCreator::select_count_query($this->tableName, $column, $condition);
+        $countValues = $this->connection->run_select_query($query);
+        if (count($countValues) == 0 or !array_key_exists("COUNT($column)", $countValues[0])) {
             return 0;
         }
 
@@ -135,7 +137,7 @@ class TableControl
     }
 
     /**
-     * connection use for this TableControl
+     * connection use for this tableControl
      * @return Connection
      */
     public function get_connection()
@@ -164,9 +166,21 @@ class TableControl
      * @param array|string $itemsToCheck like ['username' => 'abolfazl']
      * @return bool|int|mysqli_result
      */
-    public function insert_if_exist_update($dataList, $itemsToCheck) {
+    public function insert_if_exist_update($dataList, $itemsToCheck)
+    {
         if ($this->select_count($itemsToCheck) > 0)
             return $this->update_query($dataList, $itemsToCheck);
         return $this->insert_query($dataList);
+    }
+
+    /**
+     * new instance of SelectQuery creator
+     *
+     * @return SelectQueryCreator
+     * @see /SelectQueryCreator
+     */
+    public function get_select_query_creator()
+    {
+        return new SelectQueryCreator($this->tableName);
     }
 }
